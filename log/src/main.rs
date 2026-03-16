@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use datetime::{LocalDateTime, Instant, TimePiece, DatePiece};
+use chrono::{Local, DateTime};
 use rand::prelude::*;
 use serde::Serialize;
 use std::io::{BufWriter, Write};
@@ -15,18 +15,18 @@ enum MapValues {
     UInt(u64),
 }
 
-const ENTRIES: usize = 5000000;
+const ENTRIES: usize = 4_500_000;
 // there is a cap to how much faster the script runs based on how many threads
 // are spawned. The softcap is about 15, where it runs in 6 seconds. Even with
 // 200 threads it doesnt run much faster.
-const THREADS: usize = 50;
-fn format_ts(ldt: &LocalDateTime) -> String {
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        ldt.year(), ldt.month() as i32, ldt.day(),
-        ldt.hour(), ldt.minute(), ldt.second()
-    )
-}
+const THREADS: usize = 100;
+// fn format_ts(ldt: &DateTime<Local>) -> String {
+//     format!(
+//         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+//         ldt.year(), ldt.month() as i32, ldt.day(),
+//         ldt.hour(), ldt.minute(), ldt.second()
+//     )
+// }
 
 fn main() -> Result<(), Box<dyn Error>>{
     let begin = std::time::Instant::now();
@@ -35,31 +35,28 @@ fn main() -> Result<(), Box<dyn Error>>{
     // creates the directory, but does not care if it exitsts.
     std::fs::create_dir("logs/");
     for i in 0..THREADS {
-        let services = Arc::new([String::from("auth"), String::from("api"),
-            String::from("gateway"), String::from("db-proxy"),
-            String::from("billing"), String::from("inventory"),
-            String::from("notification"), String::from("worker")]);
-        let level = Arc::new([String::from("info"), String::from("error"),
-            String::from("debug"), String::from("warn"), String::from("fatal"),
-            String::from("trace")]);
-        let endpoint = Arc::new([String::from("/login"), String::from("/users"),
-            String::from("/health"), String::from("/signup"),
-            String::from("/checkout"), String::from("/metrics")]);
-        let (min_ms, max_ms) = (10, 1000);
         let handle = thread::spawn(move || {
             let mut rng = rand::rng();
+            let services = [String::from("auth"), String::from("api"),
+                String::from("gateway"), String::from("db-proxy"),
+                String::from("billing"), String::from("inventory"),
+                String::from("notification"), String::from("worker")];
+            let level = [String::from("info"), String::from("error"),
+                String::from("debug"), String::from("warn"), String::from("fatal"),
+                String::from("trace")];
+            let endpoint = [String::from("/login"), String::from("/users"),
+                String::from("/health"), String::from("/signup"),
+                String::from("/checkout"), String::from("/metrics")];
+            let (min_ms, max_ms) = (10, 1000);
 
             // creates a separate file for each of the threads
             let file = File::create(&format!("logs/log-{}.json",i)).unwrap();
             let mut buf = BufWriter::new(file);
 
             for j in 0..ENTRIES/THREADS {
-                // if j%25000 == 0 {
-                //     println!("Thread {i} done with {j} entries!");
-                // }
                 let mut map: HashMap<String, MapValues> = HashMap::new();
                 map.insert("ts".to_string(),
-                    MapValues::String(format_ts(&LocalDateTime::from_instant(Instant::now()))));
+                    MapValues::String(Local::now().to_string()));
                 map.insert("service".to_string(),
                     MapValues::String(services.choose(&mut rng).unwrap().to_string()));
                 map.insert("level".to_string(),
