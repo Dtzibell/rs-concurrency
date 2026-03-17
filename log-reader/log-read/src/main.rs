@@ -16,6 +16,7 @@ struct Args {
     /// name of the log file
     file: String,
 }
+
 fn main() {
     let args = Args::parse();
     if let Err(e) = run(args) {
@@ -24,53 +25,59 @@ fn main() {
     };
 }
 
-fn track_line(every: i32, l: i32) {
-    if l % every == 0 {
-        println!("Passed line {l}");
-    }
-}
-
-fn online_mean(average: f64, item: f64, item_count: f64) -> f64 {
-    average + (item - average) / (item_count + 1.)
-}
-
-fn add_log_to_stats(log: &LogEvent, stats: &mut Stats) {
-    stats.average_latency = online_mean(stats.average_latency,
-        log.latency as f64,
-        stats.entries as f64,
-    );
-    stats.entries += 1;
-    if log.level == "error" {
-        stats.total_errors += 1;
-    }
-    if log.level == "fatal" {
-        stats.total_fatals += 1;
-    }
-}
 
 fn run(args: Args) -> Result<(), Box<dyn Error>> {
     let path = PathBuf::from(&args.file);
-    let mut reader = BufReader::new(File::open(path)?);
-    let mut buffer = String::new();
-    let mut line = 0;
-    let mut data = HashMap::new();
-    while let Ok(bytes) = reader.read_line(&mut buffer) {
-
-        track_line(100000, line);
-        if bytes == 0 { break; }
-
-        let le: LogEvent = serde_json::from_str(&buffer)?;
-        let stats: &mut Stats = data.entry(le.service.clone()).or_insert(Stats::new());
-
-        add_log_to_stats(&le, stats);
-
-        line += 1;
-        buffer.clear();
-    }
+    let data = read_data(path, 100000);
     let mut table = make_table(&data);
-    table.set_footer(make_table(&data));
     println!("{table}");
     Ok(())
+}
+
+// set print_every to u64::MAX if dont want to print.
+fn read_data(path: &Path, print_every: u64) -> HashMap<String, Stats> {
+    let mut reader = BufReader::new(File::open(path)?);
+    let mut buffer = String::new();
+    let mut count = 0;
+    let mut data = HashMap::new();
+    loop {
+        let bytes = reader.read_line(&mut buffer);
+        if bytes.unwrap() == 0 { break; }
+        let le: LogEvent = serde_json::from_str(&buffer)?;
+
+        data.entry(le.service)
+            .or_insert_with(Stats::new)
+            .document(&le);
+
+        buffer.clear();
+
+        line += 1;
+        if count % print_every == 0 {
+            println!("Done with line {count}");
+        }
+    }
+    data
+}
+
+
+fn make_table(data: &HashMap<String, Stats>) -> Table {
+    let mut keys: Vec<&String> = data.keys().collect();
+    keys.sort();
+
+    let mut table = Table::new()
+        .load_preset(presets::UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec!["Service", "Entries", "Error rate", "Fatal rate", 
+            "Average latency"]);
+
+    for key in keys {
+        let mut row = vec![key.clone()];
+        let stats = data.get(key).unwrap();
+        let mut sv = stats.summarize();
+        row.append(&mut sv);
+        table.add_row(row);
+    }
+    table
 }
 
 fn make_summary(data: &HashMap<String, Stats>) -> Vec<String> {
@@ -82,25 +89,4 @@ fn make_summary(data: &HashMap<String, Stats>) -> Vec<String> {
     let mut row: Vec<String> = vec!["Summary".to_string()];
     row.append(&mut summary.to_vec());
     row
-}
-
-fn make_table(data: &HashMap<String, Stats>) -> Table {
-    let mut keys: Vec<&String> = data.keys().collect();
-    keys.sort();
-
-    let mut table = Table::new();
-    table.load_preset(presets::UTF8_FULL);
-    // tables are created with disabled content arrangement.
-    table.set_content_arrangement(ContentArrangement::Dynamic);
-    table.set_header(vec!["Service", "Entries", "Error rate", "Fatal rate",
-        "Average latency"]);
-
-    for key in keys {
-        let mut row = vec![key.clone()];
-        let stats = data.get(key).unwrap();
-        let mut sv = stats.to_vec();
-        row.append(&mut sv);
-        table.add_row(row);
-    }
-    table
 }
