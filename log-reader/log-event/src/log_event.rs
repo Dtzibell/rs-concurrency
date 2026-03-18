@@ -1,9 +1,10 @@
-use chrono::{DateTime, Local, FixedOffset};
+use chrono::{DateTime, FixedOffset, TimeZone};
 use serde::{Serialize, Deserialize};
+use std::ops::Add;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct LogEvent {
-    pub ts: DateTime<Local>,
+    pub ts: DateTime<FixedOffset>,
     pub level: String,
     pub service: String,
     pub latency: usize,
@@ -12,12 +13,12 @@ pub struct LogEvent {
     pub endpoint: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct LogStats {
     pub entries: usize,
     pub total_errors: usize,
     pub total_fatals: usize,
-    pub average_latency: f64,
+    pub total_latency: usize,
 }
 
 impl LogStats {
@@ -26,24 +27,19 @@ impl LogStats {
             entries: 0,
             total_errors: 0,
             total_fatals: 0,
-            average_latency: 0.,
+            total_latency: 0,
         }
     }
 
-    pub fn document(&mut self, le: &LogEvent) {
+    pub fn document(&mut self, le: &LogEvent) -> &Self {
         self.entries += 1;
         if le.level == String::from("error") {
             self.total_errors += 1;
         } else if le.level == String::from("fatal") {
             self.total_fatals += 1;
         }
-        self.average_latency = self.latency_with(le);
-    }
-
-    fn latency_with(&self, le: &LogEvent) -> f64 {
-        online_mean(self.average_latency as f64,
-            le.latency as f64,
-            self.entries as f64)
+        self.total_latency = self.total_latency + le.latency;
+        self
     }
 
     pub fn summarize(&self) -> Summary {
@@ -51,27 +47,56 @@ impl LogStats {
             entries: self.entries,
             error_rate: self.total_errors as f64 / self.entries as f64,
             fatal_rate: self.total_fatals as f64 / self.entries as f64,
-            average_latency: self.average_latency,
+            average_latency: self.total_latency as f64 / self.entries as f64,
+        }
+    }
+}
+impl Add<&LogStats> for LogStats {
+    type Output = Self;
+    fn add(self, other: &Self) -> Self {
+        LogStats {
+            entries: self.entries + other.entries,
+            total_errors: self.total_errors + other.total_errors,
+            total_fatals: self.total_fatals + other.total_fatals,
+            total_latency: self.total_latency + other.total_latency,
         }
     }
 }
 
-struct Summary {
-    entries: i32,
+#[derive(Debug, PartialEq)]
+pub struct Summary {
+    entries: usize,
     error_rate: f64,
     fatal_rate: f64,
     average_latency: f64,
 }
 
 impl Summary {
-    fn vectorize() -> Vec<String> {
-        unimplemented!();
+    pub fn new() -> Summary {
+        Summary {
+            entries: 0,
+            error_rate: 0.,
+            fatal_rate: 0.,
+            average_latency: 0.,
+        }
+    }
+    pub fn vectorize(&self) -> Vec<String> {
+        vec![self.entries.to_string(),
+            format!("{:.2}%", self.error_rate * 100.),
+            format!("{:.2}%", self.fatal_rate * 100.),
+            format!("{:.2}", self.average_latency)]
     }
 }
 
-impl From<Stats> for Summary {
-    fn from(value: Stats) -> Self {
-        unimplemented!();
+
+impl From<LogStats> for Summary {
+    fn from(value: LogStats) -> Self {
+        Summary {
+            entries: value.entries,
+            error_rate: value.total_errors as f64 / value.entries as f64,
+            fatal_rate: value.total_fatals as f64 / value.entries as f64,
+            average_latency: value.total_latency as f64 / value.entries as f64,
+        }
     }
 }
 
@@ -120,21 +145,22 @@ mod tests {
     #[test]
     fn calculates_latency_with_new_log_event() {
         let log = default_log_event();
-        let stats = default_log_stats();
+        let mut stats = default_log_stats();
+        stats.entries += 1; // because latency with does not increment entries
         let latency = stats.latency_with(&log);
-        assert_eq!(latency, 393);
+        assert_eq!(latency, 393.);
     }
 
     #[test]
     fn documents_log_event() {
         let log = default_log_event();
-        let stats = default_log_stats();
-        assert_eq!(stats.document(&log),
-            Stats {
+        let mut stats = default_log_stats();
+        assert_eq!(*stats.document(&log),
+            LogStats {
                 entries: 3,
                 total_errors: 2,
                 total_fatals: 0,
-                average_latency: 393,
+                average_latency: 393.,
             });
         let local_date = FixedOffset::east_opt(3600).unwrap()
             .with_ymd_and_hms(2026, 2, 15, 9, 30, 0)
@@ -146,12 +172,24 @@ mod tests {
             latency: 501,
             endpoint: String::from("/signup"),
         };
-        assert_eq!(stats.document(&log),
-            Stats {
+        assert_eq!(*stats.document(&another_log),
+            LogStats {
                 entries: 4,
                 total_errors: 2,
                 total_fatals: 1,
-                average_latency: 420,
+                average_latency: 420.,
             });
+    }
+
+    #[test]
+    fn creates_summary() {
+        let log = default_log_stats();
+        assert_eq!(log.summarize(),
+            Summary {
+            entries: 2,
+            error_rate: 0.5,
+            fatal_rate: 0.,
+            average_latency: 315.5,
+        });
     }
 }
