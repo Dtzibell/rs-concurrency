@@ -1,12 +1,14 @@
 use std::collections::HashMap;
-use chrono::{Local, DateTime};
-use rand::prelude::*;
-use serde::Serialize;
 use std::io::{BufWriter, Write};
 use std::fs::File;
 use std::error::Error;
 use std::thread;
 use std::sync::{Arc, RwLock};
+use std::num::NonZero;
+
+use chrono::{Local, DateTime};
+use rand::prelude::*;
+use serde::Serialize;
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -19,7 +21,6 @@ const ENTRIES: usize = 4_500_000;
 // there is a cap to how much faster the script runs based on how many threads
 // are spawned. The softcap is about 15, where it runs in 6 seconds. Even with
 // 200 threads it doesnt run much faster.
-const THREADS: usize = 100;
 // fn format_ts(ldt: &DateTime<Local>) -> String {
 //     format!(
 //         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
@@ -29,6 +30,9 @@ const THREADS: usize = 100;
 // }
 
 fn main() -> Result<(), Box<dyn Error>>{
+    let THREADS: usize = thread::available_parallelism().unwrap_or(NonZero::new(8).unwrap()).get();
+    println!("Continuing with {THREADS} threads");
+    println!("Creating {ENTRIES} entries");
     let begin = std::time::Instant::now();
     let mut handles = vec![];
 

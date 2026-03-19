@@ -8,7 +8,8 @@ use std::time;
 
 use log_event::{LogEvent, LogStats, Summary};
 
-use comfy_table::{Table, ContentArrangement, presets};
+use comfy_table::{Table, ContentArrangement, presets, Color,
+    Cell};
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -39,7 +40,7 @@ fn run(args: Args) -> Result<(), Box<dyn Error>> {
 
 // set print_every to u64::MAX if dont want to print.
 fn read_data(path: &Path, print_every: u64) -> Result<HashMap<String, LogStats>, Box<dyn Error>> {
-    let mut reader = BufReader::new(File::open(path)?);
+    let mut reader = Arc::new(Mutex::new(BufReader::new(File::open(path)?)));
     let mut buffer = String::new();
     let mut count = 0;
     let mut data = HashMap::new();
@@ -48,9 +49,9 @@ fn read_data(path: &Path, print_every: u64) -> Result<HashMap<String, LogStats>,
         if bytes.unwrap() == 0 { break; }
         let le: LogEvent = serde_json::from_str(&buffer)?;
 
-        data.entry(le.service.clone())
-            .or_insert_with(LogStats::new)
-            .document(&le);
+        let mut stats = data.entry(le.service.clone())
+            .or_insert_with(LogStats::new);
+        stats.document(&le);
 
         buffer.clear();
 
@@ -84,8 +85,15 @@ fn make_table(data: &HashMap<String, LogStats>) -> Table {
 
         total_logs = total_logs + stats;
     }
-    let mut summary_row = vec!["Summary".to_string()];
-    summary_row.append(&mut total_logs.summarize().vectorize());
+    let mut summary_row = vec![Cell::new("Summary").fg(Color::Blue)];
+    summary_row.append(&mut total_logs
+        .summarize()
+        .vectorize()
+        // didnt realize that you need an Iterator to map :thinking:
+        .iter()
+        .map(|e| Cell::new(e).fg(Color::Blue))
+        .collect::<Vec<Cell>>()
+    );
     table.add_row(summary_row);
 
     table
