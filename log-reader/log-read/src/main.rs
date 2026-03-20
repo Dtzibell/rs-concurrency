@@ -5,6 +5,8 @@ use std::fs::File;
 use std::error::Error;
 use std::io::{BufReader, BufRead};
 use std::time;
+use std::thread;
+use std::sync::{Arc, Mutex};
 
 use log_event::{LogEvent, LogStats, Summary};
 
@@ -40,27 +42,46 @@ fn run(args: Args) -> Result<(), Box<dyn Error>> {
 
 // set print_every to u64::MAX if dont want to print.
 fn read_data(path: &Path, print_every: u64) -> Result<HashMap<String, LogStats>, Box<dyn Error>> {
-    let mut reader = Arc::new(Mutex::new(BufReader::new(File::open(path)?)));
-    let mut buffer = String::new();
-    let mut count = 0;
-    let mut data = HashMap::new();
-    loop {
-        let bytes = reader.read_line(&mut buffer);
-        if bytes.unwrap() == 0 { break; }
-        let le: LogEvent = serde_json::from_str(&buffer)?;
+    let mut READER = Arc::new(Mutex::new(BufReader::new(File::open(path)?)));
+    let mut DATA = Arc::new(Mutex::new(HashMap::new()));
+    let mut handles = vec![];
+    for i in 0..4 {
+        let reader = Arc::clone(&mut READER);
+        let data = Arc::clone(&mut DATA);
+        let handle = thread::spawn(move || {
+            let mut count = 0;
+            let mut buffer = String::new();
+            loop {
+                {
+                    let bytes = reader.lock().unwrap().read_line(&mut buffer);
+                    if bytes.unwrap() == 0 { break; }
+                }
+                let le: LogEvent = serde_json::from_str(&buffer)
+                .unwrap_or_else(|_| {
+                        panic!("{buffer} could not be converted LogEvent")
+                    });
 
-        let mut stats = data.entry(le.service.clone())
-            .or_insert_with(LogStats::new);
-        stats.document(&le);
+                {
+                    let mut map = data.lock().unwrap();
+                    let mut stats = map.entry(le.service.clone())
+                        .or_insert_with(LogStats::new);
+                    stats.document(&le);
+                }
 
-        buffer.clear();
+                buffer.clear();
 
-        count += 1;
-        if count % print_every == 0 {
-            println!("Done with line {count}");
-        }
+                count += 1;
+                if count % print_every == 0 {
+                    println!("Done with line {count}");
+                }
+            }
+        });
+        handles.push(handle);
     }
-    Ok(data)
+    for h in handles {
+        h.join().unwrap();
+    }
+    Ok(Arc::try_unwrap(DATA).unwrap().into_inner().unwrap())
 }
 
 

@@ -3,11 +3,12 @@ use std::io::{BufWriter, Write};
 use std::fs::File;
 use std::error::Error;
 use std::thread;
-use std::sync::{Arc, RwLock};
+use std::sync::{RwLock};
 use std::num::NonZero;
 
 use chrono::{Local, DateTime};
 use rand::prelude::*;
+use rand::distr::weighted::WeightedIndex;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -37,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>>{
     let mut handles = vec![];
 
     // creates the directory, but does not care if it exitsts.
-    std::fs::create_dir("logs/");
+    let _ = std::fs::create_dir("logs/");
     for i in 0..THREADS {
         let handle = thread::spawn(move || {
             let mut rng = rand::rng();
@@ -52,6 +53,15 @@ fn main() -> Result<(), Box<dyn Error>>{
                 String::from("/health"), String::from("/signup"),
                 String::from("/checkout"), String::from("/metrics")];
             let (min_ms, max_ms) = (10, 1000);
+            let service_weight = WeightedIndex::new((0..services.len())
+                .map(|e| rand::random_range(1..10))
+                .collect::<Vec<i32>>()).unwrap();
+            let level_weight = WeightedIndex::new((0..level.len())
+                .map(|e| rand::random_range(1..10))
+                .collect::<Vec<i32>>()).unwrap();
+            let endpoint_weight = WeightedIndex::new((0..level.len())
+                .map(|e| rand::random_range(1..10))
+                .collect::<Vec<i32>>()).unwrap();
 
             // creates a separate file for each of the threads
             let file = File::create(&format!("logs/log-{}.json",i)).unwrap();
@@ -62,13 +72,13 @@ fn main() -> Result<(), Box<dyn Error>>{
                 map.insert("ts".to_string(),
                     MapValues::String(Local::now().to_string()));
                 map.insert("service".to_string(),
-                    MapValues::String(services.choose(&mut rng).unwrap().to_string()));
+                    MapValues::String(services[service_weight.sample(&mut rng)].clone()));
                 map.insert("level".to_string(),
-                    MapValues::String(level.choose(&mut rng).unwrap().to_string()));
+                    MapValues::String(level[level_weight.sample(&mut rng)].clone()));
                 map.insert("latency".to_string(),
                     MapValues::UInt(rand::random_range(min_ms..=max_ms)));
                 map.insert("endpoint".to_string(),
-                    MapValues::String(endpoint.choose(&mut rng).unwrap().to_string()));
+                    MapValues::String(endpoint[endpoint_weight.sample(&mut rng)].clone()));
                 serde_json::to_writer(&mut buf, &map).unwrap();
                 buf.write_all(b"\n").unwrap();
             }
@@ -84,9 +94,9 @@ fn main() -> Result<(), Box<dyn Error>>{
     for i in 0..THREADS {
         let path = format!("logs/log-{}.json", i);
         let mut file = File::open(&path).unwrap();
-        std::io::copy(&mut file, &mut out).unwrap();
-        std::fs::remove_file(path);
-        std::fs::remove_dir("logs/");
+        let _ = std::io::copy(&mut file, &mut out).unwrap();
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir("logs/");
     }
     let end = std::time::Instant::now();
     println!("Done in {}ms", begin.elapsed().as_millis());
