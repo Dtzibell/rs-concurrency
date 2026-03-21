@@ -1,5 +1,5 @@
 use chrono::{DateTime, FixedOffset};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -8,7 +8,7 @@ pub struct LogEvent {
     pub level: String,
     pub service: String,
     pub latency: usize,
-    // endpoint is not used under the current impl? 
+    // endpoint is not used under the current impl?
     // e.g. /signup
     pub endpoint: String,
 }
@@ -19,6 +19,12 @@ pub struct LogStats {
     pub total_errors: usize,
     pub total_fatals: usize,
     pub total_latency: usize,
+}
+
+impl Default for LogStats {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LogStats {
@@ -86,12 +92,29 @@ impl AddAssign<&LogStats> for LogStats {
     }
 }
 
+impl AddAssign for LogStats {
+    fn add_assign(&mut self, other: Self) {
+        *self = Self {
+            entries: self.entries + other.entries,
+            total_errors: self.total_errors + other.total_errors,
+            total_fatals: self.total_fatals + other.total_fatals,
+            total_latency: self.total_latency + other.total_latency,
+        };
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Summary {
     entries: usize,
     error_rate: f64,
     fatal_rate: f64,
     average_latency: f64,
+}
+
+impl Default for Summary {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Summary {
@@ -104,13 +127,14 @@ impl Summary {
         }
     }
     pub fn vectorize(&self) -> Vec<String> {
-        vec![self.entries.to_string(),
+        vec![
+            self.entries.to_string(),
             format!("{:.2}%", self.error_rate * 100.),
             format!("{:.2}%", self.fatal_rate * 100.),
-            format!("{:.2}", self.average_latency)]
+            format!("{:.2}", self.average_latency),
+        ]
     }
 }
-
 
 impl From<LogStats> for Summary {
     fn from(value: LogStats) -> Self {
@@ -126,9 +150,11 @@ impl From<LogStats> for Summary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     fn default_log_event() -> LogEvent {
-        let local_date = FixedOffset::east_opt(3600).unwrap()
+        let local_date = FixedOffset::east_opt(3600)
+            .unwrap()
             .with_ymd_and_hms(2026, 2, 15, 9, 30, 0)
             .unwrap();
         LogEvent {
@@ -145,43 +171,38 @@ mod tests {
             entries: 2,
             total_errors: 1,
             total_fatals: 0,
-            average_latency: 315.5,
+            total_latency: 1002,
         }
     }
 
-
     #[test]
     fn builds_default_log_stats() {
-        assert_eq!(LogStats::new(),
+        assert_eq!(
+            LogStats::new(),
             LogStats {
                 entries: 0,
                 total_errors: 0,
                 total_fatals: 0,
-                average_latency: 0.,
-            });
-    }
-
-    #[test]
-    fn calculates_latency_with_new_log_event() {
-        let log = default_log_event();
-        let mut stats = default_log_stats();
-        stats.entries += 1; // because latency with does not increment entries
-        let latency = stats.latency_with(&log);
-        assert_eq!(latency, 393.);
+                total_latency: 0,
+            }
+        );
     }
 
     #[test]
     fn documents_log_event() {
         let log = default_log_event();
         let mut stats = default_log_stats();
-        assert_eq!(*stats.document(&log),
+        assert_eq!(
+            *stats.document(&log),
             LogStats {
                 entries: 3,
                 total_errors: 2,
                 total_fatals: 0,
-                average_latency: 393.,
-            });
-        let local_date = FixedOffset::east_opt(3600).unwrap()
+                total_latency: 1002 + 548,
+            }
+        );
+        let local_date = FixedOffset::east_opt(3600)
+            .unwrap()
             .with_ymd_and_hms(2026, 2, 15, 9, 30, 0)
             .unwrap();
         let another_log = LogEvent {
@@ -191,24 +212,91 @@ mod tests {
             latency: 501,
             endpoint: String::from("/signup"),
         };
-        assert_eq!(*stats.document(&another_log),
+        assert_eq!(
+            *stats.document(&another_log),
             LogStats {
                 entries: 4,
                 total_errors: 2,
                 total_fatals: 1,
-                average_latency: 420.,
-            });
+                total_latency: 1002 + 548 + 501,
+            }
+        );
     }
 
     #[test]
     fn creates_summary() {
         let log = default_log_stats();
-        assert_eq!(log.summarize(),
+        assert_eq!(
+            log.summarize(),
             Summary {
-            entries: 2,
-            error_rate: 0.5,
-            fatal_rate: 0.,
-            average_latency: 315.5,
-        });
+                entries: 2,
+                error_rate: 0.5,
+                fatal_rate: 0.,
+                average_latency: 501.,
+            }
+        );
+    }
+    #[test]
+    fn vectorizes_summary() {
+        let summ = default_log_stats().summarize();
+        assert_eq!(
+            summ.vectorize(),
+            vec![
+                summ.entries.to_string(),
+                format!("{:.2}%", summ.error_rate * 100.),
+                format!("{:.2}%", summ.fatal_rate * 100.),
+                format!("{:.2}", summ.average_latency),
+            ]
+        );
+    }
+
+    #[test]
+    fn implements_addition_for_log_stats() {
+        let mut log1 = default_log_stats();
+        let mut log2 = default_log_stats();
+        log2.total_fatals += 1;
+        assert_eq!(
+            log1 + &log2,
+            LogStats {
+                entries: 4,
+                total_errors: 2,
+                total_fatals: 1,
+                total_latency: 2004,
+            }
+        );
+        let mut log1 = default_log_stats();
+        assert_eq!(
+            log1 + log2,
+            LogStats {
+                entries: 4,
+                total_errors: 2,
+                total_fatals: 1,
+                total_latency: 2004,
+            }
+        );
+        let mut log1 = default_log_stats();
+        let mut log2 = default_log_stats();
+        log2.total_fatals += 1;
+        log1 += &log2;
+        assert_eq!(
+            log1,
+            LogStats {
+                entries: 4,
+                total_errors: 2,
+                total_fatals: 1,
+                total_latency: 2004,
+            }
+        );
+        let mut log1 = default_log_stats();
+        log1 += log2;
+        assert_eq!(
+            log1,
+            LogStats {
+                entries: 4,
+                total_errors: 2,
+                total_fatals: 1,
+                total_latency: 2004,
+            }
+        );
     }
 }
