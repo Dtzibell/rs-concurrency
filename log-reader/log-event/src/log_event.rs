@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn implements_addition_for_log_stats() {
-        let mut log1 = default_log_stats();
+        let log1 = default_log_stats();
         let mut log2 = default_log_stats();
         log2.total_fatals += 1;
         assert_eq!(
@@ -264,7 +264,7 @@ mod tests {
                 total_latency: 2004,
             }
         );
-        let mut log1 = default_log_stats();
+        let log1 = default_log_stats();
         assert_eq!(
             log1 + log2,
             LogStats {

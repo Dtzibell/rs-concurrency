@@ -2,5 +2,5 @@
 resolver = "3"
 members = ["log",
 "log-reader/log-read",
-"log-reader/log-event",
+"log-reader/log-event", "log-reader/data_proc",
 ]

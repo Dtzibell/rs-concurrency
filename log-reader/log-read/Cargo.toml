@@ -7,5 +7,13 @@ edition = "2024"
 clap = { version = "4.6", features = ["derive"] }
 comfy-table = "7.2"
 log-event = { path = "../log-event" }
+data_proc = { path = "../data_proc" }
 rayon = "1.11"
 serde_json = "1.0"
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "my_benchmark"
+harness = false
