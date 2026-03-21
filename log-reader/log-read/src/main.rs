@@ -1,18 +1,31 @@
-use std::collections::HashMap;
-use std::process;
-use std::path::{PathBuf, Path};
-use std::fs::File;
-use std::error::Error;
-use std::io::{BufReader, BufRead};
-use std::time;
-use std::thread;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    process,
+    path::{PathBuf, Path},
+    fs::File,
+    error::Error,
+    io::{BufReader, BufRead, Read},
+    time,
+    thread,
+    sync::{Arc, Mutex},
+};
 
-use log_event::{LogEvent, LogStats, Summary};
+use log_event::{LogEvent,
+    LogStats,
+    Summary
+};
 
-use comfy_table::{Table, ContentArrangement, presets, Color,
-    Cell};
+use comfy_table::{Table,
+    ContentArrangement,
+    presets,
+    Color,
+    Cell
+};
 use clap::Parser;
+use rayon::{
+    prelude::*,
+    str::ParallelString,
+};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
@@ -42,46 +55,28 @@ fn run(args: Args) -> Result<(), Box<dyn Error>> {
 
 // set print_every to u64::MAX if dont want to print.
 fn read_data(path: &Path, print_every: u64) -> Result<HashMap<String, LogStats>, Box<dyn Error>> {
-    let mut READER = Arc::new(Mutex::new(BufReader::new(File::open(path)?)));
-    let mut DATA = Arc::new(Mutex::new(HashMap::new()));
-    let mut handles = vec![];
-    for i in 0..4 {
-        let reader = Arc::clone(&mut READER);
-        let data = Arc::clone(&mut DATA);
-        let handle = thread::spawn(move || {
-            let mut count = 0;
-            let mut buffer = String::new();
-            loop {
-                {
-                    let bytes = reader.lock().unwrap().read_line(&mut buffer);
-                    if bytes.unwrap() == 0 { break; }
+    let buffer = std::fs::read_to_string(path)?;
+    let data = buffer.par_lines()
+        .fold(|| HashMap::new(), 
+            |mut h: HashMap<String, LogStats>, b: &str| {
+                let le: LogEvent = serde_json::from_str(&b)
+                    .unwrap_or_else(|err|
+                        panic!("Problem converting {b} to LogEvent: {err}"));
+                h.entry(le.service.clone())
+                    .or_insert_with(LogStats::new)
+                    .document(&le);
+                h
+            })
+        .reduce(|| HashMap::new(),
+            |mut h: HashMap<String, LogStats>, other: HashMap<String, LogStats>| {
+                for (service, ls) in other.iter() {
+                    *h
+                        .entry(service.to_string())
+                        .or_insert_with(LogStats::new) += ls;
                 }
-                let le: LogEvent = serde_json::from_str(&buffer)
-                .unwrap_or_else(|_| {
-                        panic!("{buffer} could not be converted LogEvent")
-                    });
-
-                {
-                    let mut map = data.lock().unwrap();
-                    let mut stats = map.entry(le.service.clone())
-                        .or_insert_with(LogStats::new);
-                    stats.document(&le);
-                }
-
-                buffer.clear();
-
-                count += 1;
-                if count % print_every == 0 {
-                    println!("Done with line {count}");
-                }
-            }
-        });
-        handles.push(handle);
-    }
-    for h in handles {
-        h.join().unwrap();
-    }
-    Ok(Arc::try_unwrap(DATA).unwrap().into_inner().unwrap())
+                h
+            });
+    Ok(data)
 }
 
 

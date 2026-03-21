@@ -1,6 +1,6 @@
 use chrono::{DateTime, FixedOffset, TimeZone};
 use serde::{Serialize, Deserialize};
-use std::ops::Add;
+use std::ops::{Add, AddAssign};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct LogEvent {
@@ -60,6 +60,29 @@ impl Add<&LogStats> for LogStats {
             total_fatals: self.total_fatals + other.total_fatals,
             total_latency: self.total_latency + other.total_latency,
         }
+    }
+}
+
+impl Add for LogStats {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        LogStats {
+            entries: self.entries + other.entries,
+            total_errors: self.total_errors + other.total_errors,
+            total_fatals: self.total_fatals + other.total_fatals,
+            total_latency: self.total_latency + other.total_latency,
+        }
+    }
+}
+
+impl AddAssign<&LogStats> for LogStats {
+    fn add_assign(&mut self, other: &Self) {
+        *self = Self {
+            entries: self.entries + other.entries,
+            total_errors: self.total_errors + other.total_errors,
+            total_fatals: self.total_fatals + other.total_fatals,
+            total_latency: self.total_latency + other.total_latency,
+        };
     }
 }
 

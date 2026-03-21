@@ -1,3 +1,5 @@
 target/
 log.json
 *tags
+spec.md
+*.json
