@@ -3,3 +3,4 @@ log.json
 *tags
 spec.md
 *.json
+*.lock
