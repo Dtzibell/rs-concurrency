@@ -3,10 +3,9 @@ use std::io::{BufWriter, Write};
 use std::fs::File;
 use std::error::Error;
 use std::thread;
-use std::sync::{RwLock};
 use std::num::NonZero;
 
-use chrono::{Local, DateTime};
+use chrono::{Local};
 use rand::prelude::*;
 use rand::distr::weighted::WeightedIndex;
 use serde::Serialize;
@@ -31,15 +30,15 @@ const ENTRIES: usize = 4_500_000;
 // }
 
 fn main() -> Result<(), Box<dyn Error>>{
-    let THREADS: usize = thread::available_parallelism().unwrap_or(NonZero::new(8).unwrap()).get();
-    println!("Continuing with {THREADS} threads");
+    let threads: usize = thread::available_parallelism().unwrap_or(NonZero::new(8).unwrap()).get();
+    println!("Continuing with {threads} threads");
     println!("Creating {ENTRIES} entries");
     let begin = std::time::Instant::now();
     let mut handles = vec![];
 
     // creates the directory, but does not care if it exitsts.
     let _ = std::fs::create_dir("logs/");
-    for i in 0..THREADS {
+    for i in 0..threads {
         let handle = thread::spawn(move || {
             let mut rng = rand::rng();
             let services = [String::from("auth"), String::from("api"),
@@ -54,20 +53,20 @@ fn main() -> Result<(), Box<dyn Error>>{
                 String::from("/checkout"), String::from("/metrics")];
             let (min_ms, max_ms) = (10, 1000);
             let service_weight = WeightedIndex::new((0..services.len())
-                .map(|e| rand::random_range(1..10))
+                .map(|_| rand::random_range(1..10))
                 .collect::<Vec<i32>>()).unwrap();
             let level_weight = WeightedIndex::new((0..level.len())
-                .map(|e| rand::random_range(1..10))
+                .map(|_| rand::random_range(1..10))
                 .collect::<Vec<i32>>()).unwrap();
             let endpoint_weight = WeightedIndex::new((0..level.len())
-                .map(|e| rand::random_range(1..10))
+                .map(|_| rand::random_range(1..10))
                 .collect::<Vec<i32>>()).unwrap();
 
             // creates a separate file for each of the threads
-            let file = File::create(&format!("logs/log-{}.json",i)).unwrap();
+            let file = File::create(format!("logs/log-{}.json",i)).unwrap();
             let mut buf = BufWriter::new(file);
 
-            for j in 0..ENTRIES/THREADS {
+            for _ in 0..ENTRIES/threads {
                 let mut map: HashMap<String, MapValues> = HashMap::new();
                 map.insert("ts".to_string(),
                     MapValues::String(Local::now().to_string()));
@@ -91,14 +90,13 @@ fn main() -> Result<(), Box<dyn Error>>{
 
     // concatenates the files into one.
     let mut out = File::create("log.json").unwrap();
-    for i in 0..THREADS {
+    for i in 0..threads {
         let path = format!("logs/log-{}.json", i);
         let mut file = File::open(&path).unwrap();
         let _ = std::io::copy(&mut file, &mut out).unwrap();
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_dir("logs/");
     }
-    let end = std::time::Instant::now();
     println!("Done in {}ms", begin.elapsed().as_millis());
     Ok(())
 }

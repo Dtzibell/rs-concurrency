@@ -2,17 +2,12 @@ use std::{
     collections::HashMap,
     process,
     path::{PathBuf, Path},
-    fs::File,
     error::Error,
-    io::{BufReader, BufRead, Read},
     time,
-    thread,
-    sync::{Arc, Mutex},
 };
 
 use log_event::{LogEvent,
     LogStats,
-    Summary
 };
 
 use comfy_table::{Table,
@@ -58,9 +53,9 @@ fn read_data(path: &Path)
     let buffer = std::fs::read_to_string(path)?;
     let data = buffer.par_lines()
         // fold is equivalent to foldl, thats why identity is HashMap
-        .fold(|| HashMap::new(), 
+        .fold(HashMap::new, 
             |mut h: HashMap<String, LogStats>, b: &str| {
-                let le: LogEvent = serde_json::from_str(&b)
+                let le: LogEvent = serde_json::from_str(b)
                     .unwrap_or_else(|err|
                         panic!("Problem converting {b} to LogEvent: {err}"));
                 h.entry(le.service.clone())
@@ -73,11 +68,10 @@ fn read_data(path: &Path)
         // is basically fold, but it takes two arguments that are of the same
         // type for OP and only outputs one item, in this case HashMap<String,
         // LogStats>.
-        .reduce(|| HashMap::new(),
+        .reduce(HashMap::new,
             |mut h: HashMap<String, LogStats>, other: HashMap<String, LogStats>| {
                 for (service, ls) in other.iter() {
-                    *h
-                        .entry(service.to_string())
+                    *h.entry(service.to_string())
                         .or_insert_with(LogStats::new) += ls;
                 }
                 h
@@ -105,7 +99,7 @@ fn make_table(data: &HashMap<String, LogStats>) -> Table {
         row.append(&mut summary_vector);
         table.add_row(row);
 
-        total_logs = total_logs + stats;
+        total_logs += stats;
     }
     let mut summary_row = vec![Cell::new("Summary").fg(Color::Blue)];
     summary_row.append(&mut total_logs

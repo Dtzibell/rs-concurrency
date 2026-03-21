@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, TimeZone};
+use chrono::{DateTime, FixedOffset};
 use serde::{Serialize, Deserialize};
 use std::ops::{Add, AddAssign};
 
@@ -33,12 +33,12 @@ impl LogStats {
 
     pub fn document(&mut self, le: &LogEvent) -> &Self {
         self.entries += 1;
-        if le.level == String::from("error") {
+        if le.level == "error" {
             self.total_errors += 1;
-        } else if le.level == String::from("fatal") {
+        } else if le.level == "fatal" {
             self.total_fatals += 1;
         }
-        self.total_latency = self.total_latency + le.latency;
+        self.total_latency += le.latency;
         self
     }
 
@@ -121,10 +121,6 @@ impl From<LogStats> for Summary {
             average_latency: value.total_latency as f64 / value.entries as f64,
         }
     }
-}
-
-fn online_mean(average: f64, new_item: f64, item_count: f64) -> f64{
-    average + (new_item - average) / item_count
 }
 
 #[cfg(test)]
