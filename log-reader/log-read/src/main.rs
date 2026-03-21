@@ -46,17 +46,18 @@ fn main() {
 fn run(args: Args) -> Result<(), Box<dyn Error>> {
     let start = time::Instant::now();
     let path = PathBuf::from(&args.file);
-    let data = read_data(&path, 100000)?;
+    let data = read_data(&path)?;
     let table = make_table(&data);
     println!("{table}");
     println!("Done in {}ms", start.elapsed().as_millis());
     Ok(())
 }
 
-// set print_every to u64::MAX if dont want to print.
-fn read_data(path: &Path, print_every: u64) -> Result<HashMap<String, LogStats>, Box<dyn Error>> {
+fn read_data(path: &Path) 
+-> Result<HashMap<String, LogStats>, Box<dyn Error>> {
     let buffer = std::fs::read_to_string(path)?;
     let data = buffer.par_lines()
+        // fold is equivalent to foldl, thats why identity is HashMap
         .fold(|| HashMap::new(), 
             |mut h: HashMap<String, LogStats>, b: &str| {
                 let le: LogEvent = serde_json::from_str(&b)
@@ -67,6 +68,11 @@ fn read_data(path: &Path, print_every: u64) -> Result<HashMap<String, LogStats>,
                     .document(&le);
                 h
             })
+        // Parallel folding produces a ParIter over hashmaps produced by separate
+        // threads. This means that they need to be put back together. Reduce
+        // is basically fold, but it takes two arguments that are of the same
+        // type for OP and only outputs one item, in this case HashMap<String,
+        // LogStats>.
         .reduce(|| HashMap::new(),
             |mut h: HashMap<String, LogStats>, other: HashMap<String, LogStats>| {
                 for (service, ls) in other.iter() {
