@@ -13,6 +13,7 @@ use log_event::{LogEvent, LogStats};
 use clap::Parser;
 use comfy_table::{Cell, Color, ContentArrangement, Table, presets};
 use rayon::{prelude::*, str::ParallelString};
+use tracing_subscriber;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
@@ -22,6 +23,7 @@ struct Args {
 }
 
 fn main() {
+    tracing_subscriber::fmt::init();
     let args = Args::parse();
     if let Err(e) = run(args) {
         eprintln!("Error running the program: {e}");
