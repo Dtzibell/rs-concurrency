@@ -74,7 +74,7 @@ fn aggregate(receiver: Receiver<HashMap<String, LogStats>>) -> HashMap<String, L
     data
 }
 
-pub fn read_data(path: &Path) -> Result<HashMap<String, LogStats>, Box<dyn Error>> {
+pub fn read_data(path: &Path, threads: usize) -> Result<HashMap<String, LogStats>, Box<dyn Error>> {
     let buffer = String::new();
     let reader = BufReader::with_capacity(128*1024,File::open(path)?);
 
@@ -86,7 +86,7 @@ pub fn read_data(path: &Path) -> Result<HashMap<String, LogStats>, Box<dyn Error
     });
 
     let mut parsers = vec![];
-    for i in 0..7 {
+    for i in 0..threads {
         let parser_rx = parser_r.clone();
         let parser_tx = parser_t.clone();
         let parser = thread::spawn(move|| {
